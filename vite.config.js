@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
+import rollupNodePolyFill from 'rollup-plugin-polyfill-node'
 
 export default defineConfig({
   plugins: [vue()],
@@ -16,6 +17,17 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       }
+    }
+  },
+  define: {
+    global: 'globalThis'
+  },
+  optimizeDeps: {
+    include: ['@stomp/stompjs', 'sockjs-client']
+  },
+  build: {
+    rollupOptions: {
+      plugins: [rollupNodePolyFill()]
     }
   }
 })

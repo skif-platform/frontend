@@ -25,7 +25,6 @@ export const fetchConfigurationById = async (experimentId) => {
 }
 
 export const saveConfiguration = async (models) => {
-  alert(JSON.stringify({ models }))
   const response = await fetch(`${API_BASE}/configuration`, {
     method: 'POST',
     headers: {
@@ -49,4 +48,19 @@ export const deleteConfiguration = async (experimentId) => {
   if (!response.ok) {
     throw new Error('Failed to delete configuration')
   }
+}
+
+const datatypesCache = new Map()
+
+export const fetchModelDatatypes = async (modelId) => {
+  if (datatypesCache.has(modelId)) {
+    return datatypesCache.get(modelId)
+  }
+
+  const response = await fetch(`${API_BASE}/datatypes/${modelId}`)
+  if (!response.ok) throw new Error('Failed to fetch model datatypes')
+  
+  const data = await response.json()
+  datatypesCache.set(modelId, data)
+  return data
 }

@@ -1,8 +1,10 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import ModelList from '@/components/ModelList.vue'
-import { fetchModels, saveConfiguration } from '@/services/api'
+import { fetchModels, saveConfiguration, fetchModelDatatypes } from '@/services/api'
+import { useRouter } from 'vue-router'
 
+const router = useRouter()
 const models = ref([])
 const selectedModels = ref([])
 const isLoading = ref(false)
@@ -10,7 +12,6 @@ const error = ref(null)
 const draggedItem = ref(null)
 const dragOverIndex = ref(null)
 
-// Генератор уникальных ID
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2)
 
 onMounted(async () => {
@@ -24,20 +25,28 @@ onMounted(async () => {
   }
 })
 
-// Добавление модели в эксперимент (теперь можно добавлять дубликаты)
-const addModelToExperiment = (model) => {
-  selectedModels.value.push({
-    ...model,
-    uniqueId: generateId() // Уникальный ID для каждого экземпляра
-  })
+const addModelToExperiment = async (model) => {
+  try {
+    const datatypes = await fetchModelDatatypes(model.id)
+    selectedModels.value.push({
+      ...model,
+      uniqueId: generateId(),
+      datatypes
+    })
+  } catch (err) {
+    console.error('Failed to load datatypes:', err)
+    selectedModels.value.push({
+      ...model,
+      uniqueId: generateId(),
+      datatypes: null
+    })
+  }
 }
 
-// Удаление модели из эксперимента по uniqueId
 const removeModelFromExperiment = (uniqueId) => {
   selectedModels.value = selectedModels.value.filter(m => m.uniqueId !== uniqueId)
 }
 
-// Drag-and-Drop функции
 const handleDragStart = (event, model, uniqueId) => {
   draggedItem.value = { model, uniqueId }
   event.dataTransfer.effectAllowed = 'move'
@@ -53,16 +62,12 @@ const handleDrop = (event, targetIndex) => {
   
   if (!draggedItem.value) return
 
-  // Если перетаскиваем из списка доступных моделей
   if (!draggedItem.value.uniqueId) {
     addModelToExperiment(draggedItem.value.model)
-  } 
-  // Если перетаскиваем внутри списка выбранных моделей
-  else {
+  } else {
     const fromIndex = selectedModels.value.findIndex(m => m.uniqueId === draggedItem.value.uniqueId)
     let toIndex = targetIndex ?? selectedModels.value.length
     
-    // Корректируем индекс, если перемещаем элемент ниже в том же списке
     if (fromIndex < toIndex) toIndex--
     
     if (fromIndex !== toIndex) {
@@ -76,7 +81,6 @@ const handleDrop = (event, targetIndex) => {
   dragOverIndex.value = null
 }
 
-// Сохранение эксперимента
 const saveExperiment = async () => {
   if (selectedModels.value.length === 0) {
     alert('Добавьте хотя бы одну модель в эксперимент')
@@ -86,9 +90,12 @@ const saveExperiment = async () => {
   try {
     isLoading.value = true
     const result = await saveConfiguration(
-      selectedModels.value.map(({ uniqueId, ...model }) => model)
+      selectedModels.value.map(({ uniqueId, datatypes, ...model }) => model)
     )
-    alert(`Эксперимент сохранён с ID: ${result.experimentId}`)
+    router.push({ 
+      name: 'configuration-details', 
+      params: { id: result.experimentId }
+    })
     selectedModels.value = []
   } catch (err) {
     error.value = err.message
@@ -153,6 +160,21 @@ const saveExperiment = async () => {
               >
                 ×
               </span>
+              
+              <div class="model-datatypes" v-if="model.datatypes">
+                <div class="datatype-badge" 
+                     v-for="input in model.datatypes.inputDatatypes" 
+                     :key="'in-'+input.id"
+                     :title="input.description">
+                  ← {{ input.name }}
+                </div>
+                <div class="datatype-badge"
+                     v-for="output in model.datatypes.outputDatatypes"
+                     :key="'out-'+output.id"
+                     :title="output.description">
+                  → {{ output.name }}
+                </div>
+              </div>
             </div>
           </div>
           
@@ -214,8 +236,8 @@ const saveExperiment = async () => {
   border-radius: 4px;
   border: 1px solid #dee2e6;
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   transition: all 0.2s;
 }
 
@@ -241,10 +263,9 @@ const saveExperiment = async () => {
 }
 
 .model-info {
-  flex-grow: 1;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .instance-id {
@@ -266,6 +287,27 @@ const saveExperiment = async () => {
 
 .remove-btn:hover {
   color: #bb2d3b;
+}
+
+.model-datatypes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.datatype-badge {
+  font-size: 0.7em;
+  padding: 2px 6px;
+  background-color: #e0f2fe;
+  border-radius: 10px;
+  color: #0369a1;
+  cursor: help;
+}
+
+.datatype-badge:nth-child(even) {
+  background-color: #f0fdf4;
+  color: #15803d;
 }
 
 .save-btn {

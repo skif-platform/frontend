@@ -1,0 +1,426 @@
+<script setup>
+import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { fetchConfigurationById, fetchModelDatatypes } from '@/services/api'
+import { connectToWebSocket, disconnectFromWebSocket } from '@/services/websocket'
+
+const route = useRoute()
+const router = useRouter()
+const config = ref({
+  experimentId: '',
+  createdAt: '',
+  models: []
+})
+const isLoading = ref(true)
+const error = ref(null)
+
+const handleResultUpdate = (resultDto) => {
+  const model = config.value.models.find(m => m.id === resultDto.modelId)
+  if (!model) return
+
+  try {
+    const parsed = JSON.parse(resultDto.data)
+    model.outputDatatypes?.forEach(output => {
+      if (parsed.hasOwnProperty(output.name)) {
+        output.currentValue = parsed[output.name]
+      }
+    })
+  } catch (err) {
+    console.error('Invalid JSON in resultDto.data:', err)
+  }
+}
+
+// Загружаем данные конфигурации
+onMounted(async () => {
+  try {
+    const data = await fetchConfigurationById(route.params.id)
+
+    config.value = {
+      experimentId: data.experimentId || 'N/A',
+      createdAt: data.createdAt || new Date().toISOString(),
+      models: data
+    }
+
+    if (config.value.models.length > 0) {
+      config.value.models = await Promise.all(
+        config.value.models.map(async model => {
+          try {
+            const datatypes = await fetchModelDatatypes(model.id)
+            return {
+              ...model,
+              inputDatatypes: Array.isArray(datatypes.inputDatatypes)
+                ? datatypes.inputDatatypes.map(d => ({
+                    ...d,
+                    currentValue: d.defaultValue || ''
+                  }))
+                : [],
+              outputDatatypes: Array.isArray(datatypes.outputDatatypes)
+                ? datatypes.outputDatatypes.map(d => ({
+                    ...d,
+                    currentValue: ''
+                  }))
+                : []
+            }
+          } catch (err) {
+            console.error(`Error loading datatypes for model ${model.id}:`, err)
+            return {
+              ...model,
+              inputDatatypes: [],
+              outputDatatypes: []
+            }
+          }
+        })
+      )
+    }
+
+    // Подключение к WebSocket
+    connectToWebSocket(handleResultUpdate)
+
+  } catch (err) {
+    error.value = `Failed to load configuration: ${err.message}`
+    console.error('Loading error:', err)
+  } finally {
+    isLoading.value = false
+  }
+})
+
+onBeforeUnmount(() => {
+  disconnectFromWebSocket()
+})
+
+const goBack = () => {
+    router.push({ name: 'configurations' })
+}
+</script>
+
+<template>
+  <div class="configuration-details">
+    <button @click="goBack" class="back-btn">
+      ← Back to Configurations
+    </button>
+
+    <!-- Состояние загрузки -->
+    <div v-if="isLoading" class="loading-state">
+      <div class="spinner"></div>
+      Loading configuration details...
+    </div>
+
+    <!-- Сообщение об ошибке -->
+    <div v-else-if="error" class="error-message">
+      {{ error }}
+    </div>
+
+    <!-- Основное содержимое -->
+    <template v-else>
+      <header class="config-header">
+        <h2>Configuration: {{ config.experimentId }}</h2>
+        <div class="config-meta">
+          <span class="meta-item">
+            <strong>Created:</strong> {{ new Date(config.createdAt).toLocaleString() }}
+          </span>
+          <span class="meta-item">
+            <strong>Models:</strong> {{ config.models.length }}
+          </span>
+        </div>
+      </header>
+
+      <!-- Список моделей -->
+      <div v-if="config.models.length > 0" class="models-chain">
+        <div 
+          v-for="(model, index) in config.models" 
+          :key="model.id || index"
+          class="model-card"
+        >
+          <div class="model-header">
+            <span class="model-index">{{ index + 1 }}.</span>
+            <div class="model-info">
+              <h3 class="model-name">{{ model.name || 'Unnamed Model' }}</h3>
+              <div class="model-details">
+                <span class="model-version">v{{ model.version || '1.0' }}</span>
+                <span class="model-id">ID: {{ model.id }}</span>
+              </div>
+              <div class="model-url">{{ model.url || 'No URL provided' }}</div>
+            </div>
+          </div>
+
+          <!-- Входные данные -->
+          <div v-if="model.inputDatatypes?.length" class="datatypes-section">
+            <h4 class="section-title">Input Parameters</h4>
+            <div class="datatype-grid">
+              <div 
+                v-for="input in model.inputDatatypes" 
+                :key="`input-${model.id}-${input.id}`"
+                class="datatype-item"
+              >
+                <label :for="`input-${model.id}-${input.id}`">
+                  {{ input.name || 'Unnamed input' }}
+                </label>
+                <input
+                  :id="`input-${model.id}-${input.id}`"
+                  type="text"
+                  v-model="input.currentValue"
+                  :placeholder="input.defaultValue || 'Enter value'"
+                />
+                <div v-if="input.description" class="datatype-description">
+                  {{ input.description }}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="no-datatypes">
+            No input parameters defined
+          </div>
+
+          <!-- Выходные данные -->
+          <div v-if="model.outputDatatypes?.length" class="datatypes-section">
+            <h4 class="section-title">Output Parameters</h4>
+            <div class="datatype-grid">
+              <div 
+                v-for="output in model.outputDatatypes" 
+                :key="`output-${model.id}-${output.id}`"
+                class="datatype-item"
+              >
+                <div class="output-name">
+                  {{ output.name || 'Unnamed output' }}
+                </div>
+                <div class="output-value">
+                  {{ output.currentValue || 'Not executed yet' }}
+                </div>
+                <div v-if="output.description" class="datatype-description">
+                  {{ output.description }}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="no-datatypes">
+            No output parameters defined
+          </div>
+        </div>
+      </div>
+
+      <!-- Нет моделей -->
+      <div v-else class="empty-state">
+        <div class="empty-icon">📭</div>
+        <h3>No models in this configuration</h3>
+        <p>This configuration doesn't contain any models yet.</p>
+      </div>
+    </template>
+  </div>
+</template>
+
+<style scoped>
+.configuration-details {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 2rem;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.back-btn {
+  padding: 0.5rem 1rem;
+  background-color: #4a6fa5;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-bottom: 1.5rem;
+  transition: background-color 0.2s;
+}
+
+.back-btn:hover {
+  background-color: #3a5a8c;
+}
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem;
+  color: #555;
+}
+
+.spinner {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  border-top-color: #4a6fa5;
+  animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-message {
+  padding: 1rem;
+  background-color: #ffebee;
+  color: #c62828;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+.config-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.config-header h2 {
+  margin: 0;
+  color: #2c3e50;
+}
+
+.config-meta {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 0.5rem;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.meta-item {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.models-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.model-card {
+  padding: 1.5rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.model-header {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.model-index {
+  font-weight: bold;
+  color: #4a6fa5;
+  font-size: 1.1rem;
+}
+
+.model-info {
+  flex: 1;
+}
+
+.model-name {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1.1rem;
+}
+
+.model-details {
+  display: flex;
+  gap: 1rem;
+  margin: 0.3rem 0;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.model-url {
+  font-size: 0.8rem;
+  color: #888;
+  word-break: break-all;
+}
+
+.datatypes-section {
+  margin-top: 1.5rem;
+}
+
+.section-title {
+  margin: 0 0 1rem 0;
+  color: #4a6fa5;
+  font-size: 1rem;
+}
+
+.datatype-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+.datatype-item {
+  padding: 1rem;
+  background-color: white;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+}
+
+.datatype-item label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #333;
+}
+
+.datatype-item input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+}
+
+.output-name {
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 0.3rem;
+}
+
+.output-value {
+  padding: 0.5rem;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+}
+
+.datatype-description {
+  font-size: 0.8rem;
+  color: #666;
+  line-height: 1.4;
+}
+
+.no-datatypes {
+  padding: 1rem;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+  color: #666;
+  font-style: italic;
+  text-align: center;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  margin-top: 2rem;
+}
+
+.empty-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.empty-state h3 {
+  margin: 0 0 0.5rem 0;
+  color: #2c3e50;
+}
+
+.empty-state p {
+  margin: 0;
+  color: #666;
+}
+</style>
