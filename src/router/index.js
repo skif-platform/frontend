@@ -7,7 +7,7 @@ import ModelList from '@/components/ModelList.vue'
 const routes = [
   {
     path: '/',
-    name: 'home',
+    name: 'planner',
     component: ExperimentPlanner,
     meta: { title: 'Планировщик' }
   },

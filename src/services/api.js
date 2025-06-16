@@ -24,13 +24,13 @@ export const fetchConfigurationById = async (experimentId) => {
   return await response.json()
 }
 
-export const saveConfiguration = async (models) => {
+export const saveConfiguration = async (configuration) => {
   const response = await fetch(`${API_BASE}/configuration`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ models }),
+    body: JSON.stringify(configuration),
   })
   
   if (!response.ok) {

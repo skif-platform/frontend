@@ -48,12 +48,12 @@ const openConfiguration = (experimentId) => {
 
 <template>
   <div class="configuration-list">
-    <h2>Saved Configurations</h2>
-    <div v-if="isLoading">Loading...</div>
+    <h2>Сохранённые конфигурации</h2>
+    <div v-if="isLoading">Загрузка...</div>
     <div v-else-if="error" class="error-message">{{ error }}</div>
     <div v-else>
       <div v-if="configurations.length === 0" class="empty-message">
-        No saved configurations
+        Нет сохранённых конфигураций
       </div>
       <ul v-else class="configurations">
         <li 
@@ -63,10 +63,11 @@ const openConfiguration = (experimentId) => {
           @click="openConfiguration(config.experimentId)"
         >
           <div class="config-info">
-            <div class="config-id">ID: {{ config.experimentId }}</div>
+            <div class="config-id">Название: {{ config.name }}</div>
+            <div class="config-meta">Описание: {{ config.description }}</div>
             <div class="config-meta">
-              <span>Models: {{ config.models.length }}</span>
-              <span>Created: {{ new Date(config.createdAt).toLocaleString() }}</span>
+              <span>Моделей: {{ config.models.length }}</span>
+              <span>Создано: {{ new Date(config.createdAt).toLocaleString() }}</span>
             </div>
           </div>
           <button 

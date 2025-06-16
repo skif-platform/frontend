@@ -3,11 +3,14 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchConfigurationById, fetchModelDatatypes } from '@/services/api'
 import { connectToWebSocket, disconnectFromWebSocket } from '@/services/websocket'
+import GraphVisualization from '@/components/GraphVisualization.vue'
 
 const route = useRoute()
 const router = useRouter()
 const config = ref({
   experimentId: '',
+  name: '',
+  description: '',
   createdAt: '',
   models: []
 })
@@ -22,23 +25,34 @@ const handleResultUpdate = (resultDto) => {
     const parsed = JSON.parse(resultDto.data)
     model.outputDatatypes?.forEach(output => {
       if (parsed.hasOwnProperty(output.name)) {
+        // Инициализация истории значений
+        if (!output.history) {
+          output.history = []
+        }
+        // Добавление нового значения в историю
+        console.log(resultDto.tick)
+        output.history.push({
+          tick: resultDto.tick,
+          value: parsed[output.name]
+        })
+        console.log(output.history)
         output.currentValue = parsed[output.name]
       }
     })
   } catch (err) {
-    console.error('Invalid JSON in resultDto.data:', err)
+    console.error('Ошибка парсинга JSON:', err)
   }
 }
 
-// Загружаем данные конфигурации
 onMounted(async () => {
   try {
     const data = await fetchConfigurationById(route.params.id)
 
     config.value = {
-      experimentId: data.experimentId || 'N/A',
+      name: data.name || 'N/A',
+      description: data.description || 'N/A',
       createdAt: data.createdAt || new Date().toISOString(),
-      models: data
+      models: data.models
     }
 
     if (config.value.models.length > 0) {
@@ -57,12 +71,13 @@ onMounted(async () => {
               outputDatatypes: Array.isArray(datatypes.outputDatatypes)
                 ? datatypes.outputDatatypes.map(d => ({
                     ...d,
-                    currentValue: ''
+                    currentValue: '',
+                    history: []
                   }))
-                : []
+                : []             
             }
           } catch (err) {
-            console.error(`Error loading datatypes for model ${model.id}:`, err)
+            console.error(`Ошибка загрузки типов данных для модели ${model.id}:`, err)
             return {
               ...model,
               inputDatatypes: [],
@@ -73,12 +88,11 @@ onMounted(async () => {
       )
     }
 
-    // Подключение к WebSocket
     connectToWebSocket(handleResultUpdate)
 
   } catch (err) {
-    error.value = `Failed to load configuration: ${err.message}`
-    console.error('Loading error:', err)
+    error.value = `Ошибка загрузки конфигурации: ${err.message}`
+    console.error('Ошибка загрузки:', err)
   } finally {
     isLoading.value = false
   }
@@ -96,35 +110,32 @@ const goBack = () => {
 <template>
   <div class="configuration-details">
     <button @click="goBack" class="back-btn">
-      ← Back to Configurations
+      ← Назад к конфигурациям
     </button>
 
-    <!-- Состояние загрузки -->
     <div v-if="isLoading" class="loading-state">
       <div class="spinner"></div>
-      Loading configuration details...
+      Загрузка деталей конфигурации...
     </div>
 
-    <!-- Сообщение об ошибке -->
     <div v-else-if="error" class="error-message">
       {{ error }}
     </div>
 
-    <!-- Основное содержимое -->
     <template v-else>
       <header class="config-header">
-        <h2>Configuration: {{ config.experimentId }}</h2>
+        <h2>Конфигурация: {{ config.name }}</h2>
+        <h3>Описание: {{ config.description }}</h3>
         <div class="config-meta">
           <span class="meta-item">
-            <strong>Created:</strong> {{ new Date(config.createdAt).toLocaleString() }}
+            <strong>Создано:</strong> {{ new Date(config.createdAt).toLocaleString() }}
           </span>
           <span class="meta-item">
-            <strong>Models:</strong> {{ config.models.length }}
+            <strong>Моделей:</strong> {{ config.models.length }}
           </span>
         </div>
       </header>
 
-      <!-- Список моделей -->
       <div v-if="config.models.length > 0" class="models-chain">
         <div 
           v-for="(model, index) in config.models" 
@@ -134,18 +145,17 @@ const goBack = () => {
           <div class="model-header">
             <span class="model-index">{{ index + 1 }}.</span>
             <div class="model-info">
-              <h3 class="model-name">{{ model.name || 'Unnamed Model' }}</h3>
+              <h3 class="model-name">{{ model.name || 'Безымянная модель' }}</h3>
               <div class="model-details">
                 <span class="model-version">v{{ model.version || '1.0' }}</span>
                 <span class="model-id">ID: {{ model.id }}</span>
               </div>
-              <div class="model-url">{{ model.url || 'No URL provided' }}</div>
+              <div class="model-url">{{ model.url || 'URL не указан' }}</div>
             </div>
           </div>
 
-          <!-- Входные данные -->
           <div v-if="model.inputDatatypes?.length" class="datatypes-section">
-            <h4 class="section-title">Input Parameters</h4>
+            <h4 class="section-title">Входные параметры</h4>
             <div class="datatype-grid">
               <div 
                 v-for="input in model.inputDatatypes" 
@@ -153,13 +163,13 @@ const goBack = () => {
                 class="datatype-item"
               >
                 <label :for="`input-${model.id}-${input.id}`">
-                  {{ input.name || 'Unnamed input' }}
+                  {{ input.name || 'Безымянный вход' }}
                 </label>
                 <input
                   :id="`input-${model.id}-${input.id}`"
                   type="text"
                   v-model="input.currentValue"
-                  :placeholder="input.defaultValue || 'Enter value'"
+                  :placeholder="input.defaultValue || 'Введите значение'"
                 />
                 <div v-if="input.description" class="datatype-description">
                   {{ input.description }}
@@ -168,12 +178,11 @@ const goBack = () => {
             </div>
           </div>
           <div v-else class="no-datatypes">
-            No input parameters defined
+            Нет входных параметров
           </div>
 
-          <!-- Выходные данные -->
           <div v-if="model.outputDatatypes?.length" class="datatypes-section">
-            <h4 class="section-title">Output Parameters</h4>
+            <h4 class="section-title">Выходные параметры</h4>
             <div class="datatype-grid">
               <div 
                 v-for="output in model.outputDatatypes" 
@@ -181,11 +190,17 @@ const goBack = () => {
                 class="datatype-item"
               >
                 <div class="output-name">
-                  {{ output.name || 'Unnamed output' }}
+                  {{ output.name || 'Безымянный выход' }}
                 </div>
                 <div class="output-value">
-                  {{ output.currentValue || 'Not executed yet' }}
+                  {{ output.currentValue || 'Ещё не выполнено' }}
                 </div>
+                <GraphVisualization 
+                  v-if="output.history && output.history.length > 0"
+                  :title="output.name"
+                  :data="output.history.map(item => item.value)"
+                  :ticks="output.history.map(item => item.tick)"
+                />
                 <div v-if="output.description" class="datatype-description">
                   {{ output.description }}
                 </div>
@@ -193,16 +208,15 @@ const goBack = () => {
             </div>
           </div>
           <div v-else class="no-datatypes">
-            No output parameters defined
+            Нет выходных параметров
           </div>
         </div>
       </div>
 
-      <!-- Нет моделей -->
       <div v-else class="empty-state">
         <div class="empty-icon">📭</div>
-        <h3>No models in this configuration</h3>
-        <p>This configuration doesn't contain any models yet.</p>
+        <h3>Нет моделей в этой конфигурации</h3>
+        <p>Эта конфигурация пока не содержит ни одной модели.</p>
       </div>
     </template>
   </div>
@@ -267,6 +281,11 @@ const goBack = () => {
 }
 
 .config-header h2 {
+  margin: 0;
+  color: #2c3e50;
+}
+
+.config-header h3 {
   margin: 0;
   color: #2c3e50;
 }
@@ -422,5 +441,22 @@ const goBack = () => {
 .empty-state p {
   margin: 0;
   color: #666;
+}
+
+.datatype-item {
+  position: relative;
+}
+
+.output-value {
+  font-family: monospace;
+  font-size: 1.1rem;
+  padding: 0.5rem;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+}
+
+.datatype-grid {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
 </style>

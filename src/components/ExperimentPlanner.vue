@@ -11,6 +11,8 @@ const isLoading = ref(false)
 const error = ref(null)
 const draggedItem = ref(null)
 const dragOverIndex = ref(null)
+const experimentName = ref('')
+const experimentDescription = ref('')
 
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2)
 
@@ -82,6 +84,16 @@ const handleDrop = (event, targetIndex) => {
 }
 
 const saveExperiment = async () => {
+  if (!experimentName.value.trim()) {
+    alert('Пожалуйста, укажите название эксперимента')
+    return
+  }
+
+  if (!experimentDescription.value.trim()) {
+    alert('Пожалуйста, добавьте описание эксперимента')
+    return
+  }
+
   if (selectedModels.value.length === 0) {
     alert('Добавьте хотя бы одну модель в эксперимент')
     return
@@ -89,14 +101,18 @@ const saveExperiment = async () => {
   
   try {
     isLoading.value = true
-    const result = await saveConfiguration(
-      selectedModels.value.map(({ uniqueId, datatypes, ...model }) => model)
-    )
+    const result = await saveConfiguration({
+      name: experimentName.value,
+      description: experimentDescription.value,
+      models: selectedModels.value.map(({ uniqueId, datatypes, ...model }) => model)
+    })
     router.push({ 
       name: 'configuration-details', 
       params: { id: result.experimentId }
     })
     selectedModels.value = []
+    experimentName.value = ''
+    experimentDescription.value = ''
   } catch (err) {
     error.value = err.message
     alert(`Ошибка: ${err.message}`)
@@ -122,6 +138,31 @@ const saveExperiment = async () => {
       
       <div class="experiment-config">
         <h2>Конфигурация эксперимента</h2>
+
+        <div class="experiment-meta">
+          <div class="form-group">
+            <label for="experiment-name">Название эксперимента*</label>
+            <input 
+              id="experiment-name"
+              type="text" 
+              v-model="experimentName" 
+              placeholder="Введите название эксперимента"
+              required
+            />
+          </div>
+          
+          <div class="form-group">
+            <label for="experiment-description">Описание эксперимента*</label>
+            <textarea 
+              id="experiment-description"
+              v-model="experimentDescription" 
+              placeholder="Введите описание эксперимента"
+              required
+              rows="3"
+            ></textarea>
+          </div>
+        </div>
+
         <div 
           v-if="selectedModels.length === 0" 
           class="empty-message"
@@ -196,6 +237,7 @@ const saveExperiment = async () => {
   display: flex;
   gap: 30px;
   min-height: 500px;
+  box-sizing: border-box;
 }
 
 .model-selection, .experiment-config {
@@ -204,6 +246,42 @@ const saveExperiment = async () => {
   border-radius: 8px;
   background-color: #f8f9fa;
   border: 1px solid #dee2e6;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.experiment-meta {
+  margin-bottom: 20px;
+  width: 100%;
+}
+
+.form-group {
+  margin-bottom: 15px;
+  width: 100%;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  width: 100%;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 14px;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 80px;
 }
 
 .empty-message {

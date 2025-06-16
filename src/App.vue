@@ -37,10 +37,11 @@ const activeRoute = computed(() => route.name)
         </transition>
       </RouterView>
     </main>
-
+    <!--
     <footer class="app-footer">
       <p>Experiment Planner © 2025</p>
     </footer>
+    -->
   </div>
 </template>
 
